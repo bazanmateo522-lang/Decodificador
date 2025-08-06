@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Conversor DCN con Pantalla de Carga</title>
+<style>
+  body {
+    font-family: monospace;
+    background: #00111a;
+    color: #cce6ff;
+    margin: 0; padding: 0;
+  }
+  #pantallaCarga {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #002233;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: #66ccff;
+    z-index: 1000;
+  }
+  #barraProgresoContenedor {
+    width: 80%;
+    max-width: 500px;
+    background: #00334d;
+    border-radius: 10px;
+    border: 2px solid #3399ff;
+    overflow: hidden;
+    margin-top: 20px;
+  }
+  #barraProgreso {
+    height: 30px;
+    background: #00bfff;
+    width: 0%;
+    transition: width 0.2s ease-out;
+  }
+  #mensajeCarga {
+    margin-top: 15px;
+    font-size: 1.2em;
+    font-weight: bold;
+  }
+  #app {
+    max-width: 700px;
+    margin: 30px auto;
+    padding: 20px;
+    background: #00334d;
+    border-radius: 10px;
+    display: none; /* Oculto al inicio */
+  }
+  textarea, input[type="text"] {
+    width: 100%;
+    height: 100px;
+    font-family: monospace;
+    font-size: 18px;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #3399ff;
+    resize: vertical;
+  }
+  button {
+    margin-top: 15px;
+    background: #0099ff;
+    border: none;
+    padding: 10px 20px;
+    font-size: 18px;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-right: 10px;
+  }
+  button:hover {
+    background: #007acc;
+  }
+  #resultado {
+    margin-top: 25px;
+    white-space: pre-wrap;
+    background: #001a33;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #3399ff;
+    min-height: 80px;
+  }
+  #archivoCarga {
+    margin-top: 15px;
+  }
+  #modoInfo {
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="pantallaCarga">
+  <div style="font-size: 1.6em; font-weight: bold;">CARGANDO SISTEMA...</div>
+  <div id="barraProgresoContenedor">
+    <div id="barraProgreso"></div>
+  </div>
+  <div id="mensajeCarga">Inicializando componentes...</div>
+</div>
+
+<div id="app">
+  <h1>Conversor DCN 1.4.7 beta</h1>
+
+  <div id="modoInfo">Modo actual: <span id="modoTexto">Texto ↔ Nucleótidos</span></div>
+  <button onclick="cambiarModo()">Cambiar a Decimal ↔ Binario</button>
+
+  <br/><br/>
+
+  <label for="textoEntrada">Entrada:</label>
+  <textarea id="textoEntrada" placeholder="Escribe texto o secuencia..."></textarea>
+  <br />
+
+  <button id="btnConvertir1" onclick="accionPrincipal()">Texto a Nucleótidos</button>
+  <button id="btnConvertir2" onclick="accionSecundaria()">Nucleótidos a Texto</button>
+  <button onclick="copiarResultado()">Copiar Resultado</button>
+  <button onclick="guardarArchivo()">Guardar Resultado</button>
+  <button onclick="abrirVideo()">Ver video en YouTube</button>
+
+  <br />
+  <input type="file" id="archivoCarga" accept=".txt" />
+  <button onclick="cargarArchivo()">Cargar Texto</button>
+
+  <div id="resultado"></div>
+</div>
+
+<script>
+  // Variables para el modo: true = Texto <-> Nucleótidos, false = Decimal <-> Binario
+  let modoTextoANucleotidos = true;
+
+  const LONG_BLOQUE = 4;
+  const NUCLEOTIDOS = ['A', 'C', 'G', 'T'];
+  const nucleotidoAValor = {
+    'A': 0, 'C': 1, 'G': 2, 'T': 3,
+    'a': 0, 'c': 1, 'g': 2, 't': 3
+  };
+
+  function decimalANucleotidos(num) {
+    if (num < 0) throw "Número negativo no permitido";
+    let secuencia = '';
+    do {
+      secuencia = NUCLEOTIDOS[num % 4] + secuencia;
+      num = Math.floor(num / 4);
+    } while (num > 0);
+    while (secuencia.length < LONG_BLOQUE) {
+      secuencia = 'A' + secuencia;
+    }
+    return secuencia;
+  }
+
+  function nucleotidosADecimal(sec) {
+    let num = 0;
+    for (let c of sec) {
+      if (!(c in nucleotidoAValor)) throw `Nucleótido inválido: ${c}`;
+      num = num * 4 + nucleotidoAValor[c];
+    }
+    return num;
+  }
+
+  function textoANucleotidos(texto) {
+    let resultado = '';
+    for (let c of texto) {
+      resultado += decimalANucleotidos(c.charCodeAt(0));
+    }
+    return resultado;
+  }
+
+  function nucleotidosATexto(secuencia) {
+    if (secuencia.length % LONG_BLOQUE !== 0) {
+      throw "La longitud debe ser múltiplo de " + LONG_BLOQUE;
+    }
+    let resultado = '';
+    for (let i = 0; i < secuencia.length; i += LONG_BLOQUE) {
+      let bloque = secuencia.substring(i, i + LONG_BLOQUE);
+      resultado += String.fromCharCode(nucleotidosADecimal(bloque));
+    }
+    return resultado;
+  }
+
+  // Funciones para Decimal-Binario
+
+  function decimalABinario(numero) {
+    if (!Number.isInteger(numero)) throw "El número debe ser un entero";
+    if (numero < 0) throw "El número debe ser no negativo";
+    if (numero === 0) return "0";
+    let bits = [];
+    while (numero > 0) {
+      bits.push((numero % 2).toString());
+      numero = Math.floor(numero / 2);
+    }
+    return bits.reverse().join('');
+  }
+
+  function binarioADecimal(binario) {
+    if (typeof binario !== 'string') throw "El número binario debe ser una cadena";
+    binario = binario.trim();
+    if (binario.length === 0) throw "El número binario no puede estar vacío";
+    if (!/^[01]+$/.test(binario)) throw "El número binario solo puede contener 0s y 1s";
+    let decimal = 0;
+    for (let i = 0; i < binario.length; i++) {
+      if (binario[binario.length - 1 - i] === '1') {
+        decimal += 2 ** i;
+      }
+    }
+    return decimal;
+  }
+
+  // Funciones para botones
+
+  function accionPrincipal() {
+    const entrada = document.getElementById('textoEntrada').value.trim();
+    try {
+      let resultado;
+      if (modoTextoANucleotidos) {
+        resultado = textoANucleotidos(entrada);
+        document.getElementById('resultado').textContent = "Secuencia:\n" + resultado;
+      } else {
+        // Decimal a Binario
+        const numero = parseInt(entrada, 10);
+        if (isNaN(numero)) throw "Entrada no es un número entero válido";
+        resultado = decimalABinario(numero);
+        document.getElementById('resultado').textContent = "Binario:\n" + resultado;
+      }
+    } catch(e) {
+      document.getElementById('resultado').textContent = "ERROR: " + e;
+    }
+  }
+
+  function accionSecundaria() {
+    const entrada = document.getElementById('textoEntrada').value.trim();
+    try {
+      let resultado;
+      if (modoTextoANucleotidos) {
+        resultado = nucleotidosATexto(entrada.toUpperCase());
+        document.getElementById('resultado').textContent = "Texto:\n" + resultado;
+      } else {
+        // Binario a Decimal
+        resultado = binarioADecimal(entrada);
+        document.getElementById('resultado').textContent = "Decimal:\n" + resultado;
+      }
+    } catch(e) {
+      document.getElementById('resultado').textContent = "ERROR: " + e;
+    }
+  }
+
+  function copiarResultado() {
+    const resultado = document.getElementById('resultado').textContent;
+    if (!resultado) {
+      alert("No hay resultado para copiar.");
+      return;
+    }
+    navigator.clipboard.writeText(resultado)
+      .then(() => alert("Resultado copiado al portapapeles."))
+      .catch(() => alert("Error al copiar."));
+  }
+
+  function guardarArchivo() {
+    const resultado = document.getElementById('resultado').textContent;
+    if (!resultado) {
+      alert("No hay resultado para guardar.");
+      return;
+    }
+    const blob = new Blob([resultado], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "resultado.txt";
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }
+
+  function cargarArchivo() {
+    const input = document.getElementById('archivoCarga');
+    if (!input.files.length) {
+      alert("Selecciona un archivo primero.");
+      return;
+    }
+    const file = input.files[0];
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+      const contenido = e.target.result.trim();
+      document.getElementById('textoEntrada').value = contenido;
+      document.getElementById('resultado').textContent = '';
+    };
+
+    reader.readAsText(file);
+  }
+
+  function abrirVideo() {
+    const url = "https://youtu.be/dQw4w9WgXcQ"; // Cambia el enlace al que quieras
+    window.open(url, "_blank");
+  }
+
+  function cambiarModo() {
+    modoTextoANucleotidos = !modoTextoANucleotidos;
+    const modoTextoSpan = document.getElementById('modoTexto');
+    const btnConvertir1 = document.getElementById('btnConvertir1');
+    const btnConvertir2 = document.getElementById('btnConvertir2');
+    const botonCambio = document.querySelector("button[onclick='cambiarModo()']");
+
+    if (modoTextoANucleotidos) {
+      modoTextoSpan.textContent = "Texto ↔ Nucleótidos";
+      btnConvertir1.textContent = "Texto a Nucleótidos";
+      btnConvertir2.textContent = "Nucleótidos a Texto";
+      botonCambio.textContent = "Cambiar a Decimal ↔ Binario";
+      document.getElementById('textoEntrada').placeholder = "Escribe texto o secuencia...";
+      document.getElementById('archivoCarga').accept = ".txt";
+    } else {
+      modoTextoSpan.textContent = "Decimal ↔ Binario";
+      btnConvertir1.textContent = "Decimal a Binario";
+      btnConvertir2.textContent = "Binario a Decimal";
+      botonCambio.textContent = "Cambiar a Texto ↔ Nucleótidos";
+      document.getElementById('textoEntrada').placeholder = "Escribe número decimal o binario...";
+      document.getElementById('archivoCarga').accept = ".txt";
+    }
+
+    // Limpiar campos al cambiar modo
+    document.getElementById('textoEntrada').value = '';
+    document.getElementById('resultado').textContent = '';
+  }
+
+  // Pantalla de carga animada
+  function animarCarga() {
+    const barra = document.getElementById('barraProgreso');
+    const mensaje = document.getElementById('mensajeCarga');
+
+    let progreso = 0;
+    const interval = setInterval(() => {
+      progreso += 5;
+      barra.style.width = progreso + "%";
+
+      if (progreso < 25) {
+        mensaje.textContent = "Inicializando componentes...";
+      } else if (progreso < 50) {
+        mensaje.textContent = "Conectando con el servidor...";
+      } else if (progreso < 75) {
+        mensaje.textContent = "Configurando sistema...";
+      } else if (progreso < 100) {
+        mensaje.textContent = "Finalizando...";
+      } else {
+        mensaje.textContent = "Carga completa";
+      }
+
+      if (progreso >= 100) {
+        clearInterval(interval);
+        setTimeout(() => {
+          document.getElementById('pantallaCarga').style.display = 'none';
+          document.getElementById('app').style.display = 'block';
+        }, 800);
+      }
+    }, 200);
+  }
+
+  window.onload = animarCarga;
+</script>
+
+</body>
+</html>
+/body>
+</html>
